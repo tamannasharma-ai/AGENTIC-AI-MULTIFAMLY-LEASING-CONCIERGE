@@ -1,0 +1,14 @@
+# Unit/UI tests mock embeddings and external services; no model download needed.
+-c requirements.txt
+streamlit
+psycopg2-binary
+python-dotenv
+langchain-core
+langchain-groq
+langgraph
+groq
+resend
+pandas
+python-dateutil
+tzdata
+pytest>=8,<10

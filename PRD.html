@@ -1,0 +1,441 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome file</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1 id="product-requirements-document-prd">Product Requirements Document (PRD)</h1>
+<p><strong>Product Name:</strong> Autonomous AI Virtual Leasing Concierge</p>
+<p><strong>Target Domain:</strong> Multi-Family PropTech &amp; Residential Asset Operations</p>
+<p><strong>Architecture:</strong> Multi-Tenant Autonomous Agent Architecture</p>
+<p><strong>Status:</strong> In Active Production / Staging</p>
+<h2 id="executive-summary--problem-statement">1. Executive Summary &amp; Problem Statement</h2>
+<h3 id="problem-statement">1.1 Problem Statement</h3>
+<p>In traditional multifamily operations, the lead-to-tour pipeline suffers from friction, high labor overhead, and missed conversion windows:</p>
+<ul>
+<li>
+<p><strong>Off-Hour Abandonment:</strong> Over 45% of renter inquiries arrive outside standard leasing office hours (5 PM – 9 AM). Static contact forms result in prolonged response latency and lead decay.</p>
+</li>
+<li>
+<p><strong>Double-Booking &amp; Staff Friction:</strong> On-site leasing teams manage appointments manually across fragmented channels, creating tour schedule collisions and double-booking errors.</p>
+</li>
+<li>
+<p><strong>Stale Vacancy Costs:</strong> Stale inventory (vacancies exceeding 45 days) consumes unrecovered carrying costs. On-site leasing agents frequently lack deterministic systems to dynamically offer pre-approved concessions without manual manager sign-offs.</p>
+</li>
+<li>
+<p><strong>Compliance Exposure:</strong> Manual leasing communication risks non-compliance with the U.S. Fair Housing Act when staff face subjective prospect inquiries regarding neighborhood safety, crime statistics, or local demographics.</p>
+</li>
+</ul>
+<h3 id="solution-vision">1.2 Solution Vision</h3>
+<p>The Autonomous AI Virtual Leasing Concierge is an enterprise-grade, multi-tenant digital leasing platform. Built with <strong>LangGraph</strong>, <strong>Groq (Qwen)</strong>, <strong>Supabase (PostgreSQL + pgvector)</strong>, and a <strong>Streamlit</strong> split-screen interface, it automates the renter acquisition funnel:</p>
+<ol>
+<li>
+<p>Surfaces real-time vacant inventory with dynamic move-in concessions for units vacant <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>45</mn></mrow><annotation encoding="application/x-tex">\ge 45</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">45</span></span></span></span></span> days.</p>
+</li>
+<li>
+<p>Resolves policy inquiries using semantic RAG retrieval while adhering to Fair Housing Act guidelines.</p>
+</li>
+<li>
+<p>Coordinates tour bookings with conflict detection (45-minute collision buffers) and transactional email confirmations via Resend.</p>
+</li>
+<li>
+<p>Executes temporary 15-minute “VIP Holds” directly in the operational database with live countdown timers, taking units off the open market without requiring immediate external payment processing.</p>
+</li>
+</ol>
+<h2 id="personas--target-users">2. Personas &amp; Target Users</h2>
+<p><strong>Persona</strong></p>
+<p><strong>Role</strong></p>
+<p><strong>Core Jobs-to-be-Done</strong></p>
+<p><strong>Key Pain Points</strong></p>
+<p><strong>The Prospect (Renter)</strong></p>
+<p>High-intent apartment hunter</p>
+<p>Search available layouts, view unit media, verify pet/parking costs, book private tours, lock in promotional pricing.</p>
+<p>Outdated availability feeds, hidden ancillary fees, delayed tour confirmations.</p>
+<p><strong>Leasing Specialist / Agent</strong></p>
+<p>On-site property representative</p>
+<p>Conduct verified in-person tours, receive pre-qualified lead dossiers, maintain clean tour calendars.</p>
+<p>Manual calendar juggling, fielding repetitive policy questions, unvetted leads.</p>
+<p><strong>Property Manager / Asset Director</strong></p>
+<p>Operational portfolio lead</p>
+<p>Accelerate time-to-lease, reduce operational vacancy days, enforce pricing and policy compliance.</p>
+<p>Revenue leakage from long vacancy durations, Fair Housing liability exposure.</p>
+<h2 id="system-architecture--technical-specifications">3. System Architecture &amp; Technical Specifications</h2>
+<pre><code>  ┌────────────────────────────────────────────────────────┐
+  │         Streamlit Luxury Split-Screen Interface         │
+  │   [Left: Property Showcase]  [Right: Concierge Window]  │
+  └───────────────────────────┬────────────────────────────┘
+                              │ Active User Queries / Prompt Chips
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │          LangGraph Orchestration State Machine         │
+  │              Model: Groq (Qwen 3.8 27B)                │
+  │              Compliance: Fair Housing System Guard     │
+  └─────────────┬───────────────────────────┬──────────────┘
+                │ Tools Execution           │ Semantic Query
+                ▼                           ▼
+  ┌───────────────────────────┐   ┌────────────────────────┐
+  │ PostgreSQL Primary DB     │   │ pgvector Store         │
+  │ - units (w/ vacant_since) │   │ - property_knowledge   │
+  │ - tours (w/ buffer index) │   │ - MiniLM-L6-v2 vectors │
+  │ - reservations (15m hold) │   └────────────────────────┘
+  │ - leads (CRM upserts)     │
+  └─────────────┬─────────────┘
+                │
+        ┌───────┴────────┐
+        ▼                ▼
+┌──────────────┐  ┌──────────────┐
+│  Resend API  │  │ RentCast API │
+│ Email Engine │  │ Sync Worker  │
+└──────────────┘  └──────────────┘
+
+</code></pre>
+<h3 id="technology-stack">3.1 Technology Stack</h3>
+<ul>
+<li>
+<p><strong>Agent Framework:</strong> LangGraph (StateGraph with conditional edge routing to prebuilt ToolNodes).</p>
+</li>
+<li>
+<p><strong>LLM Engine:</strong> Groq Cloud API serving <code>qwen/qwen3.8-27b</code> at low latency (<span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>600</mn><mtext>&nbsp;ms</mtext></mrow><annotation encoding="application/x-tex">&lt;600\text{ ms}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">600</span><span class="mord text"><span class="mord">&nbsp;ms</span></span></span></span></span></span> TTFT).</p>
+</li>
+<li>
+<p><strong>Primary Database:</strong> Supabase Managed PostgreSQL.</p>
+</li>
+<li>
+<p><strong>Vector Store:</strong> Supabase <code>pgvector</code> with <code>sentence-transformers/all-MiniLM-L6-v2</code> (384-dimensional embeddings).</p>
+</li>
+<li>
+<p><strong>Application Frontend:</strong> Streamlit with custom CSS (glassmorphism design system, persistent split-screen layout, and HTML5/JS embedded components).</p>
+</li>
+<li>
+<p><strong>Communication Gateway:</strong> Resend API for transactional, branded HTML email confirmations.</p>
+</li>
+<li>
+<p><strong>Data Integration:</strong> RentCast API integration with scheduled automated ingest pipelines.</p>
+</li>
+<li>
+<p><strong>Background Processing:</strong> APScheduler executing daily/twice-weekly data sync workers.</p>
+</li>
+</ul>
+<h2 id="functional-requirements--feature-scope">4. Functional Requirements &amp; Feature Scope</h2>
+<h3 id="feature-module-1-inventory-search--dynamic-concession-engine">Feature Module 1: Inventory Search &amp; Dynamic Concession Engine</h3>
+<ul>
+<li>
+<p><strong>FR-1.1:</strong> The system shall expose a tool <code>search_vacant_units(max_rent, bedrooms)</code> querying Supabase for units where <code>status = 'vacant'</code>.</p>
+</li>
+<li>
+<p><strong>FR-1.2:</strong> The query shall dynamically calculate <code>days_vacant</code> via SQL:</p>
+<p><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>days_vacant</mtext><mo>=</mo><mtext>EXTRACT(DAY&nbsp;FROM&nbsp;(NOW()&nbsp;-&nbsp;COALESCE(vacant_since,&nbsp;NOW())))::int</mtext></mrow><annotation encoding="application/x-tex">\text{days\_vacant} = \text{EXTRACT(DAY FROM (NOW() - COALESCE(vacant\_since, NOW())))::int}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1.00444em; vertical-align: -0.31em;"></span><span class="mord text"><span class="mord">days_vacant</span></span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 1.06em; vertical-align: -0.31em;"></span><span class="mord text"><span class="mord">EXTRACT(DAY&nbsp;FROM&nbsp;(NOW()&nbsp;-&nbsp;COALESCE(vacant_since,&nbsp;NOW())))::int</span></span></span></span></span></span></span></p>
+</li>
+<li>
+<p><strong>FR-1.3:</strong> Concession rules must attach promotional metadata dynamically:</p>
+<ul>
+<li>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>45</mn><mtext>&nbsp;days</mtext></mrow><annotation encoding="application/x-tex">\ge 45\text{ days}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">45</span><span class="mord text"><span class="mord">&nbsp;days</span></span></span></span></span></span>: Attaches <code>"Move-in Special: $500 off 1st month's rent!"</code>.</p>
+</li>
+<li>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>60</mn><mtext>&nbsp;days</mtext></mrow><annotation encoding="application/x-tex">\ge 60\text{ days}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">60</span><span class="mord text"><span class="mord">&nbsp;days</span></span></span></span></span></span>: Attaches <code>"Special Promotion: $750 off 1st month's rent + Waived $100 Admin Fee!"</code>.</p>
+</li>
+<li>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>45</mn><mtext>&nbsp;days</mtext></mrow><annotation encoding="application/x-tex">&lt; 45\text{ days}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">45</span><span class="mord text"><span class="mord">&nbsp;days</span></span></span></span></span></span>: Returns <code>special_offer = None</code>.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>FR-1.4:</strong> The agent shall proactively pitch authorized concessions in conversational prose and highlight them via gold badge components (<code>.concession-pill</code>) in the UI.</p>
+</li>
+</ul>
+<h3 id="feature-module-2-strict-anti-collision-tour-scheduling-engine">Feature Module 2: Strict Anti-Collision Tour Scheduling Engine</h3>
+<ul>
+<li>
+<p><strong>FR-2.1:</strong> The system shall expose <code>book_tour_appointment(unit_number, prospect_name, prospect_email, date_time, tour_type)</code>.</p>
+</li>
+<li>
+<p><strong>FR-2.2:</strong> Tour booking must verify that the target unit is strictly <code>vacant</code>. If the unit is <code>held</code>, <code>reserved</code>, or <code>leased</code>, the appointment must be refused.</p>
+</li>
+<li>
+<p><strong>FR-2.3 (Collision Prevention):</strong> The tool must query existing appointments in <code>tours</code> to enforce a mandatory 45-minute collision buffer:</p>
+<p>SQL</p>
+<pre><code>SELECT id, scheduled_at FROM tours 
+WHERE scheduled_at &gt;= (%s::timestamptz - INTERVAL '44 minutes')
+  AND scheduled_at &lt;= (%s::timestamptz + INTERVAL '44 minutes')
+LIMIT 1;
+
+</code></pre>
+<p>If a conflict exists, the tool rejects the booking, states the conflicting time, and prompts the prospect to pick an adjacent open slot.</p>
+</li>
+<li>
+<p><strong>FR-2.4:</strong> On successful booking, the system dispatches a branded HTML email via Resend containing the prospect name, unit number, timestamp, visitor parking guidelines, and unique tour UUID.</p>
+</li>
+</ul>
+<h3 id="feature-module-3-vip-rate-lock--temporary-reservation-holds">Feature Module 3: VIP Rate Lock &amp; Temporary Reservation Holds</h3>
+<ul>
+<li>
+<p><strong>FR-3.1:</strong> The system shall expose <code>create_reservation_hold(unit_number, prospect_name, prospect_email)</code>.</p>
+</li>
+<li>
+<p><strong>FR-3.2:</strong> Execution sets the unit status in <code>units</code> to <code>'held'</code> and inserts a record in <code>reservations</code> with status <code>'held'</code> and an expiration timestamp:</p>
+<p><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>expires_at</mtext><mo>=</mo><msub><mtext>NOW()</mtext><mtext>UTC</mtext></msub><mo>+</mo><mn>15</mn><mtext>&nbsp;minutes</mtext></mrow><annotation encoding="application/x-tex">\text{expires\_at} = \text{NOW()}_{\text{UTC}} + 15\text{ minutes}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.97786em; vertical-align: -0.31em;"></span><span class="mord text"><span class="mord">expires_at</span></span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 1.0497em; vertical-align: -0.2997em;"></span><span class="mord"><span class="mord text"><span class="mord">NOW()</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.178631em;"><span class="" style="top: -2.4003em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">UTC</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.2997em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.66786em; vertical-align: 0em;"></span><span class="mord">15</span><span class="mord text"><span class="mord">&nbsp;minutes</span></span></span></span></span></span></span></p>
+</li>
+<li>
+<p><strong>FR-3.3:</strong> The agent emits a structured delimiter payload:</p>
+<p><code>VIP_HOLD_INITIALIZED::{"unit_number": "...", "expires_at": "...", "seconds_remaining": 900}::[Message]</code></p>
+</li>
+<li>
+<p><strong>FR-3.4:</strong> The frontend parses this payload and renders a live, pulsing JavaScript countdown banner (<code>render_vip_countdown_banner</code>) that updates seconds in real time.</p>
+</li>
+<li>
+<p><strong>FR-3.5:</strong> Expired holds without finalized leases revert to <code>'vacant'</code> via database trigger or cleanup tasks.</p>
+</li>
+</ul>
+<h3 id="feature-module-4-compliance-guarded-knowledge-base-rag">Feature Module 4: Compliance-Guarded Knowledge Base (RAG)</h3>
+<ul>
+<li>
+<p><strong>FR-4.1:</strong> The system shall expose <code>lookup_property_policy(query)</code> executing vector cosine similarity search against <code>property_knowledge</code>.</p>
+</li>
+<li>
+<p><strong>FR-4.2 (Fair Housing Mandate):</strong> System instructions mandate adherence to the U.S. Fair Housing Act. The agent must systematically refuse to answer subjective inquiries regarding:</p>
+<ul>
+<li>
+<p>Neighborhood crime or safety statistics.</p>
+</li>
+<li>
+<p>Racial, ethnic, or demographic makeups.</p>
+</li>
+<li>
+<p>Local religious institutions or familial status distribution.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>FR-4.3:</strong> The mandatory fallback response must state:</p>
+<blockquote>
+<p><em>“Under Fair Housing guidelines, I cannot comment on neighborhood demographics or safety. I can, however, provide official floor plans, unit specs, pricing, and tour scheduling.”</em></p>
+</blockquote>
+</li>
+</ul>
+<h3 id="feature-module-5-automated-market-ingestion--local-backups">Feature Module 5: Automated Market Ingestion &amp; Local Backups</h3>
+<ul>
+<li>
+<p><strong>FR-5.1:</strong> A dedicated background worker (<code>rentcast_sync_worker.py</code>) using <code>APScheduler</code> executes scheduled pulls of long-term apartment listings.</p>
+</li>
+<li>
+<p><strong>FR-5.2:</strong> Data is pulled via RentCast REST API (<code>/v1/listings/rental/long-term</code>) within API limits.</p>
+</li>
+<li>
+<p><strong>FR-5.3:</strong> Each pull outputs a timestamped local CSV snapshot (<code>rentcast_daily_dumps/rentcast_dump_[zip]_[date]_[time].csv</code>) alongside a symlinked <code>rentcast_dump_latest.csv</code>.</p>
+</li>
+<li>
+<p><strong>FR-5.4:</strong> Ingested listings are transformed and upserted into Supabase <code>units</code>.</p>
+</li>
+</ul>
+<h2 id="non-functional-requirements-nfrs">5. Non-Functional Requirements (NFRs)</h2>
+<p><strong>Attribute</strong></p>
+<p><strong>Criteria &amp; Threshold</strong></p>
+<p><strong>Response Latency</strong></p>
+<p>Time to First Token (TTFT) <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>600</mn><mtext>&nbsp;ms</mtext></mrow><annotation encoding="application/x-tex">&lt; 600\text{ ms}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">600</span><span class="mord text"><span class="mord">&nbsp;ms</span></span></span></span></span></span>; full response generation <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>2.0</mn><mtext>&nbsp;s</mtext></mrow><annotation encoding="application/x-tex">&lt; 2.0\text{ s}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">2.0</span><span class="mord text"><span class="mord">&nbsp;s</span></span></span></span></span></span> using Groq acceleration.</p>
+<p><strong>Data Integrity</strong></p>
+<p>Strict ACID transactional semantics in Supabase. Hold creations and status flips execute in unified database transactions.</p>
+<p><strong>Availability &amp; Uptime</strong></p>
+<p>99.9% uptime target for the LangGraph engine and Supabase backend.</p>
+<p><strong>Security &amp; Privacy</strong></p>
+<p>Prospect PII (Name, Email, Phone) encrypted at rest in PostgreSQL. Zero external leaks of database connection strings.</p>
+<p><strong>Device Responsiveness</strong></p>
+<p>UI renders responsively across desktop resolutions down to <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1280</mn><mo>×</mo><mn>720</mn></mrow><annotation encoding="application/x-tex">1280\times 720</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.72777em; vertical-align: -0.08333em;"></span><span class="mord">1280</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">720</span></span></span></span></span> utilizing split-screen architecture.</p>
+<h2 id="user-interface--experience-uiux-specifications">6. User Interface &amp; Experience (UI/UX) Specifications</h2>
+<ul>
+<li>
+<p><strong>Layout Structure:</strong> True 50/50 side-by-side grid (<code>st.columns([1.1, 1.2], gap="large")</code>).</p>
+<ul>
+<li>
+<p><strong>Left Column (Property Showcase):</strong> Branded hero card, 3 live metrics cards (Available Units, Starting Rent, 48-Hour Approval tag), and high-resolution photo grids of kitchens, amenity decks, and floor plans.</p>
+</li>
+<li>
+<p><strong>Right Column (Concierge Window):</strong> Dedicated conversational console featuring:</p>
+<ul>
+<li>
+<p>Gradient header with live operational badge (<code>● Ready</code>).</p>
+</li>
+<li>
+<p>One-click clickable suggestion pills directly above the viewport.</p>
+</li>
+<li>
+<p>Fixed-height scroll container (<code>height=520</code>) preventing layout shifts during streaming.</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Visual Theme:</strong> Deep obsidian background (<code>#0d1527</code>), frosted glass cards (<code>rgba(18, 26, 47, 0.85)</code>), electric cyan accents (<code>#38bdf8</code>), and amber concession markers (<code>#fbbf24</code>).</p>
+</li>
+</ul>
+<h2 id="data-models--database-schema">7. Data Models &amp; Database Schema</h2>
+<p>SQL</p>
+<pre><code>-- 1. Units Inventory Table
+CREATE TABLE IF NOT EXISTS units (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    unit_number VARCHAR(20) UNIQUE NOT NULL,
+    building VARCHAR(100) DEFAULT 'The Standard',
+    floor INT NOT NULL,
+    bedrooms INT NOT NULL,
+    bathrooms NUMERIC(3, 1) NOT NULL,
+    sqft INT NOT NULL,
+    rent_usd NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'vacant' CHECK (status IN ('vacant', 'held', 'reserved', 'leased')),
+    vacant_since TIMESTAMPTZ DEFAULT NOW(),
+    amenities JSONB DEFAULT '[]'::jsonb,
+    photos JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Prospects / Leads Table
+CREATE TABLE IF NOT EXISTS leads (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    full_name VARCHAR(150) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    phone VARCHAR(50),
+    preferred_beds INT,
+    max_budget_usd NUMERIC(10, 2),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Tour Appointments Table
+CREATE TABLE IF NOT EXISTS tours (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    unit_id UUID REFERENCES units(id) ON DELETE CASCADE,
+    prospect_name VARCHAR(150) NOT NULL,
+    prospect_email VARCHAR(150) NOT NULL,
+    tour_type VARCHAR(50) DEFAULT 'in_person' CHECK (tour_type IN ('in_person', 'virtual', 'self_guided')),
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tours_scheduled_at ON tours(scheduled_at);
+
+-- 4. Temporary VIP Reservation Holds Table
+CREATE TABLE IF NOT EXISTS reservations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    unit_id UUID REFERENCES units(id) ON DELETE CASCADE,
+    prospect_name VARCHAR(150) NOT NULL,
+    prospect_email VARCHAR(150) NOT NULL,
+    status VARCHAR(50) DEFAULT 'held' CHECK (status IN ('held', 'paid', 'expired', 'cancelled')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. RAG Policy Knowledge Store
+CREATE TABLE IF NOT EXISTS property_knowledge (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    category VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    embedding VECTOR(384),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+</code></pre>
+<h2 id="success-metrics--key-performance-indicators-kpis">8. Success Metrics &amp; Key Performance Indicators (KPIs)</h2>
+<pre><code>       Total Inbound Interactions
+                   │
+                   ▼
+       [Qualified Leads Captured]       ---&gt; Target: ≥ 35% Conversion
+                   │
+                   ▼
+        [Tours Booked / VIP Holds]      ---&gt; Target: ≥ 18% Conversion
+                   │
+                   ▼
+     [Final Leases Signed (Off-Hours)]  ---&gt; Target: ≥ 25% Total Portfolio
+
+</code></pre>
+<p><strong>Metric</strong></p>
+<p><strong>Target Objective</strong></p>
+<p><strong>Measurement Method</strong></p>
+<p><strong>Off-Hours Lead Capture</strong></p>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>40</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\ge 40\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.80556em; vertical-align: -0.05556em;"></span><span class="mord">40%</span></span></span></span></span> increase in captured prospect contact cards outside 9 AM–5 PM.</p>
+<p>Supabase <code>leads</code> timestamps vs. business hours.</p>
+<p><strong>Tour Scheduling Velocity</strong></p>
+<p>Conversion of chat sessions to booked tours <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>18</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\ge 18\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.80556em; vertical-align: -0.05556em;"></span><span class="mord">18%</span></span></span></span></span>.</p>
+<p>Count of rows in <code>tours</code> divided by unique chat sessions.</p>
+<p><strong>Stale Vacancy Reduction</strong></p>
+<p>Decrease average days-on-market for vacant inventory by <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>12</mn><mtext>&nbsp;days</mtext></mrow><annotation encoding="application/x-tex">\ge 12\text{ days}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">12</span><span class="mord text"><span class="mord">&nbsp;days</span></span></span></span></span></span>.</p>
+<p>Mean delta between <code>vacant_since</code> and <code>tours</code>/<code>reservations</code> creation.</p>
+<p><strong>Collision Incidence Rate</strong></p>
+<p>Exactly <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.0</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">0.0\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.80556em; vertical-align: -0.05556em;"></span><span class="mord">0.0%</span></span></span></span></span> overlapping bookings.</p>
+<p>Automated collision audit verifying zero tour intervals <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mn>45</mn><mtext>&nbsp;minutes</mtext></mrow><annotation encoding="application/x-tex">&lt; 45\text{ minutes}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.66786em; vertical-align: 0em;"></span><span class="mord">45</span><span class="mord text"><span class="mord">&nbsp;minutes</span></span></span></span></span></span>.</p>
+<p><strong>Fair Housing Audit Pass Rate</strong></p>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>100</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">100\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.80556em; vertical-align: -0.05556em;"></span><span class="mord">100%</span></span></span></span></span> compliance across red-teaming test suites.</p>
+<p>Automated evaluation runs testing responses to prohibited inquiries.</p>
+<h2 id="risk-analysis--mitigation-matrix">9. Risk Analysis &amp; Mitigation Matrix</h2>
+<p><strong>Risk Factor</strong></p>
+<p><strong>Severity</strong></p>
+<p><strong>Probability</strong></p>
+<p><strong>Mitigation Strategy</strong></p>
+<p><strong>LLM Hallucination of Pricing/Availability</strong></p>
+<p>High</p>
+<p>Low</p>
+<p>Enforce strict structured tool outputs (<code>search_vacant_units</code>). Unit data is returned via deterministic SQL queries rather than parametric LLM memory.</p>
+<p><strong>Fair Housing Regulatory Violations</strong></p>
+<p>Critical</p>
+<p>Low</p>
+<p>System prompt hard-boundaries paired with few-shot safety examples. Explicitly forbids demographic, safety, or racial discourse.</p>
+<p><strong>Database Lock Contention During Concurrent Holds</strong></p>
+<p>Medium</p>
+<p>Medium</p>
+<p>Unit reservation operations execute inside strict database transactions using <code>SELECT FOR UPDATE</code> on unit records.</p>
+<p><strong>Rate Limit Depletion (RentCast API)</strong></p>
+<p>Low</p>
+<p>Low</p>
+<p>Daily/twice-weekly scheduled cron jobs limit calls to <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>∼</mo><mn>10</mn><mtext>&nbsp;requests/month</mtext></mrow><annotation encoding="application/x-tex">\sim 10\text{ requests/month}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.36687em; vertical-align: 0em;"></span><span class="mrel">∼</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord">10</span><span class="mord text"><span class="mord">&nbsp;requests/month</span></span></span></span></span></span>, well below the 50-request limit.</p>
+<h2 id="implementation-roadmap--release-phases">10. Implementation Roadmap &amp; Release Phases</h2>
+<h3 id="phase-1-core-automation-current-baseline---complete">Phase 1: Core Automation (Current Baseline - Complete)</h3>
+<ul>
+<li>
+<p>Functional LangGraph state workflow with Groq (Qwen 3.8 27B).</p>
+</li>
+<li>
+<p>Supabase PostgreSQL relational schema with <code>pgvector</code> policy search.</p>
+</li>
+<li>
+<p>Dynamic concession calculation for listings vacant <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≥</mo><mn>45</mn></mrow><annotation encoding="application/x-tex">\ge 45</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.77194em; vertical-align: -0.13597em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.64444em; vertical-align: 0em;"></span><span class="mord">45</span></span></span></span></span> days.</p>
+</li>
+<li>
+<p>45-minute tour booking collision buffer with Resend transactional email confirmations.</p>
+</li>
+<li>
+<p>15-minute VIP lock tool with embedded animated JavaScript countdown widget.</p>
+</li>
+<li>
+<p>Split-screen Streamlit desktop UI with responsive clickable prompt pills.</p>
+</li>
+</ul>
+<h3 id="phase-2-enhanced-omnichannel--operations-q4-2026">Phase 2: Enhanced Omnichannel &amp; Operations (Q4 2026)</h3>
+<ul>
+<li>
+<p>Twilio SMS &amp; WhatsApp webhook proxy connecting the LangGraph state machine to mobile prospects.</p>
+</li>
+<li>
+<p>Background cron task executing <code>expire_stale_holds()</code> to automatically revert expired holds to <code>'vacant'</code>.</p>
+</li>
+<li>
+<p>Multi-property expansion: Dynamic <code>property_id</code> state injection across multi-building portfolios.</p>
+</li>
+</ul>
+<h3 id="phase-3-autonomous-lease-execution-q1-2027">Phase 3: Autonomous Lease Execution (Q1 2027)</h3>
+<ul>
+<li>
+<p>Multimodal AI pre-screening: Document parsing for automated <span class="katex--inline"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mo>×</mo></mrow><annotation encoding="application/x-tex">3\times</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.72777em; vertical-align: -0.08333em;"></span><span class="mord">3</span><span class="mord">×</span></span></span></span></span> income-to-rent verification via pay stub/W-2 uploads.</p>
+</li>
+<li>
+<p>Smart lock API integration (Latch/Brivo) for generating automated QR code visitor passes upon tour confirmation.</p>
+</li>
+<li>
+<p>Dedicated administrative operations dashboard for on-site leasing directors.</p>
+</li>
+</ul>
+</div>
+</body>
+
+</html>

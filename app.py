@@ -1,0 +1,313 @@
+"""Leasing portal with complete session-scoped agent history."""
+import json
+import os
+from time import perf_counter
+from datetime import datetime, timezone
+from uuid import uuid4
+
+import streamlit as st
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+load_dotenv()
+try:
+    for key in ("SUPABASE_DB_URL", "GROQ_API_KEY", "RESEND_API_KEY", "GROQ_MODEL", "GROQ_FALLBACK_MODEL", "ANALYTICS_ENABLED", "ANALYTICS_MODE", "DEMO_CONTROLS"):
+        if key in st.secrets and not os.getenv(key):
+            os.environ[key] = str(st.secrets[key])
+except FileNotFoundError:
+    pass
+
+from agent3 import leasing_app, search_vacant_units, upsert_lead, reset_demo_data
+from leasing_utils import PROPERTY_NAME, PROPERTY_ADDRESS, OFFICE_HOURS, osm_embed_url
+from leasing_analytics import begin_request, finish_request, save_feedback, load_demo_summary, enabled as analytics_enabled
+from chat_suggestions import SUGGESTED_QUESTIONS, BLOCKED_EXAMPLE_INDEX
+from demo_features import ARCHITECTURE, ReplyStream, consume_request, demo_controls_enabled, reply_caption
+
+
+st.set_page_config(page_title=f"{PROPERTY_NAME} | Leasing", page_icon=":material/apartment:", layout="wide")
+st.title(PROPERTY_NAME)
+st.caption(PROPERTY_ADDRESS)
+st.caption("Fictional community demo. Sample inventory, policies, contact number and illustrative photos.")
+
+
+def as_list(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return value if isinstance(value, list) else []
+
+
+def render_units(units):
+    for unit in units:
+        with st.container(border=True):
+            st.subheader(f"Unit {unit['unit_number']}")
+            st.write(f"${float(unit['rent_usd']):,.0f}/month | {unit['bedrooms']} bed | {unit['bathrooms']} bath | {unit['sqft']} sq ft")
+            if unit.get("special_offer"):
+                st.success(unit["special_offer"])
+            photos = as_list(unit.get("photos"))
+            if photos:
+                st.image(photos[0], width="stretch", caption="Illustrative photo")
+            amenities = as_list(unit.get("amenities"))
+            if amenities:
+                st.caption(" | ".join(str(a) for a in amenities[:6]))
+
+
+@st.fragment(run_every="1s")
+def render_hold(payload):
+    remaining = max(0, int((datetime.fromisoformat(payload["expires_at"]) - datetime.now(timezone.utc)).total_seconds()))
+    if remaining:
+        st.info(f"Unit {payload['unit_number']} held for {payload['prospect_name']}: {remaining // 60:02d}:{remaining % 60:02d} remaining")
+    else:
+        st.caption(f"Hold for Unit {payload['unit_number']} expired.")
+
+
+def render_tool(message, index):
+    content = str(message.content)
+    try:
+        if message.name == "search_vacant_units":
+            render_units(as_list(content))
+        elif content.startswith("TOUR_CONFIRMED::"):
+            payload, _ = json.JSONDecoder().raw_decode(content.removeprefix("TOUR_CONFIRMED::"))
+            st.success(f"Unit {payload['unit_number']}: {payload['scheduled_display']}")
+            st.download_button("Add to calendar", payload["ics"], file_name=payload["filename"], mime="text/calendar", key=f"calendar_{index}", icon=":material/calendar_month:")
+        elif content.startswith("VIP_HOLD_INITIALIZED::"):
+            payload, _ = json.JSONDecoder().raw_decode(content.removeprefix("VIP_HOLD_INITIALIZED::"))
+            render_hold(payload)
+    except (ValueError, KeyError, TypeError):
+        st.caption("The result could not be displayed. Please check availability again.")
+
+
+st.session_state.setdefault("agent_messages", [])
+st.session_state.setdefault("inventory", [])
+st.session_state.setdefault("analytics_session_id", str(uuid4()))
+st.session_state.setdefault("feedback_request", None)
+
+
+def record_rating(request, key):
+    selected = st.session_state.get(key)
+    saved = save_feedback(request, None if selected is None else selected + 1)
+    st.session_state.feedback_notice = "Rating saved." if saved else "Rating could not be saved. Please try again."
+
+
+def permit_request():
+    wait = consume_request(st.session_state)
+    if wait:
+        st.warning(f"Too many requests. Please try again in {wait} seconds.")
+    return not wait
+
+
+@st.cache_data(ttl=30, max_entries=1, show_spinner=False)
+def demo_summary():
+    return load_demo_summary()
+
+
+blocked_example_clicked = False
+with st.sidebar:
+    if demo_controls_enabled(st.get_option("server.address")):
+        st.subheader("Demo controls")
+        if st.button("Reset demo", icon=":material/restart_alt:", help="Clean expired holds, clear this conversation and refresh cached lookups. Active holds and tours are preserved."):
+            try:
+                st.session_state.reset_notice = reset_demo_data()
+                st.session_state.agent_messages = []
+                st.session_state.inventory = []
+                st.session_state.feedback_request = None
+                st.session_state.pop("feedback_notice", None)
+                demo_summary.clear()
+                st.rerun()
+            except Exception:
+                st.error("Reset could not be completed. Please check the database connection.")
+        if st.session_state.get("reset_notice"):
+            st.caption(st.session_state.reset_notice)
+        st.subheader("Demo metrics")
+        st.caption("Last 24 hours | Demo traffic")
+        if st.button("Refresh metrics", icon=":material/refresh:"):
+            demo_summary.clear()
+        if analytics_enabled():
+            try:
+                summary = demo_summary()
+                st.metric("Blocked prompts", summary["blocked"])
+                question, icon = SUGGESTED_QUESTIONS[BLOCKED_EXAMPLE_INDEX]
+                blocked_example_clicked = st.button(
+                    question, key="blocked_prompt_example", icon=icon,
+                    help="Submit a blocked-prompt example to the concierge.",
+                )
+                rating = summary["mean_rating"]
+                st.metric("Average rating", "N/A" if rating is None else f"{float(rating):.1f} / 5", help=f"{summary['ratings']} rated replies")
+                attempts = summary["model_requests"]
+                st.metric("Fallback-trigger rate", "N/A" if not attempts else f"{100 * summary['fallback_requests'] / attempts:.1f}%", help=f"{summary['fallback_requests']} of {attempts} requests with recorded model attempts. A trigger does not imply a successful fallback.")
+            except Exception:
+                st.caption("Metrics temporarily unavailable.")
+        else:
+            st.caption("Analytics disabled.")
+with st.expander("How this works", icon=":material/account_tree:"):
+    st.markdown(f"```mermaid\n{ARCHITECTURE}\n```")
+
+
+left, right = st.columns([1, 1.2], gap="large")
+with left:
+    inventory_tab, location_tab, contact_tab = st.tabs(["Available Homes", "Location", "Contact"])
+    with inventory_tab:
+        with st.form("inventory_search"):
+            beds = st.selectbox("Bedrooms", ["Any", "Studio", "1", "2", "3", "4"])
+            budget = st.number_input("Maximum monthly rent ($)", min_value=0, value=3000, step=100)
+            number = st.text_input("Unit number (optional)")
+            specials = st.checkbox("Move-in specials only")
+            page = st.number_input("Results page", min_value=1, value=1, step=1)
+            searched = st.form_submit_button("Search homes", icon=":material/search:")
+        if searched and permit_request():
+            tracking = begin_request(st.session_state.analytics_session_id, "inventory", task="search")
+            try:
+                result = search_vacant_units.invoke({"max_rent": budget or None, "bedrooms": None if beds == "Any" else 0 if beds == "Studio" else int(beds), "unit_number": number or None, "specials_only": specials, "page": page})
+                st.session_state.inventory = as_list(result)
+                if not st.session_state.inventory:
+                    st.info(result)
+                finish_request(tracking, tool_result=("search_vacant_units", result))
+            except Exception:
+                st.session_state.inventory = []
+                st.error("Inventory is temporarily unavailable. Please try again later.")
+                finish_request(tracking, error="exception")
+        if st.session_state.inventory:
+            first = st.session_state.inventory[0]
+            total = int(first.get("total_matches", len(st.session_state.inventory)))
+            size = int(first.get("page_size", 5))
+            st.caption(f"{total} matching homes | Page {first.get('page', 1)} of {(total + size - 1) // size}")
+        render_units(st.session_state.inventory)
+    with location_tab:
+        st.write(OFFICE_HOURS)
+        st.iframe(osm_embed_url(), height=320)
+        st.link_button("Open map", "https://www.openstreetmap.org/?mlat=29.9437&mlon=-90.0749#map=16/29.9437/-90.0749", icon=":material/map:")
+    with contact_tab:
+        with st.form("lead"):
+            name = st.text_input("Full name")
+            email = st.text_input("Email")
+            phone = st.text_input("Phone (optional)")
+            preferred = st.selectbox("Preferred bedrooms", ["Any", "Studio", "1", "2", "3", "4"])
+            maximum = st.number_input("Monthly budget ($)", min_value=0, value=2500, step=100)
+            consent = st.checkbox("I agree to save these details and be contacted about apartments.")
+            submitted = st.form_submit_button("Request contact", icon=":material/send:")
+        if submitted:
+            if not consent:
+                st.warning("Consent is required to save contact details.")
+            elif permit_request():
+                tracking = begin_request(st.session_state.analytics_session_id, "contact", task="lead")
+                try:
+                    outcome = upsert_lead(name, email, phone or None, None if preferred == "Any" else 0 if preferred == "Studio" else int(preferred), maximum or None)
+                    if outcome.startswith("Lead captured"):
+                        st.success("Your contact request has been saved.")
+                    else:
+                        st.warning(outcome)
+                    finish_request(tracking, tool_result=("capture_prospect_lead", outcome))
+                except Exception:
+                    st.error("Your request could not be saved. Please try again later.")
+                    finish_request(tracking, error="exception")
+
+with right:
+    st.subheader("Leasing Concierge")
+    if st.button("Clear conversation", icon=":material/delete:"):
+        st.session_state.agent_messages = []
+        st.session_state.feedback_request = None
+        st.session_state.pop("feedback_notice", None)
+        st.rerun()
+    chat_ready = bool(os.getenv("GROQ_API_KEY"))
+    suggested_prompt = SUGGESTED_QUESTIONS[BLOCKED_EXAMPLE_INDEX][0] if blocked_example_clicked else None
+    suggestion_index = BLOCKED_EXAMPLE_INDEX if blocked_example_clicked else None
+    suggestion_columns = st.columns(2)
+    for index, (question, icon) in enumerate(SUGGESTED_QUESTIONS):
+        if index == BLOCKED_EXAMPLE_INDEX:
+            continue
+        if suggestion_columns[index % 2].button(
+            question, key=f"suggestion_{index}", icon=icon,
+            width="stretch", disabled=not chat_ready,
+        ):
+            suggested_prompt = question
+            suggestion_index = index
+    chat_viewport = st.container(height=560)
+    with chat_viewport:
+        if not st.session_state.agent_messages:
+            st.write("Welcome. What are you looking for in your next home?")
+        for index, message in enumerate(st.session_state.agent_messages):
+            if isinstance(message, ToolMessage):
+                render_tool(message, index)
+            elif isinstance(message, HumanMessage) or (isinstance(message, AIMessage) and not message.tool_calls):
+                with st.chat_message("user" if isinstance(message, HumanMessage) else "assistant"):
+                    st.markdown(message.content)
+                    if isinstance(message, AIMessage):
+                        caption = reply_caption(message)
+                        if caption:
+                            st.caption(caption)
+        feedback_request = st.session_state.feedback_request
+        if feedback_request is not None and analytics_enabled():
+            st.caption("How helpful was this reply?")
+            feedback_key = f"rating_{feedback_request.id}"
+            st.feedback("stars", key=feedback_key, on_change=record_rating, args=(feedback_request, feedback_key))
+            if st.session_state.get("feedback_notice"):
+                st.caption(st.session_state.feedback_notice)
+    typed_prompt = st.chat_input("Ask about apartments, policies or tour times", disabled=not chat_ready, submit_mode="disable")
+    prompt = suggested_prompt or typed_prompt
+    if not chat_ready:
+        st.info("Chat is temporarily unavailable.")
+    if prompt and permit_request():
+        tracking = begin_request(
+            st.session_state.analytics_session_id,
+            "suggested" if suggested_prompt else "typed", suggestion_index,
+        )
+        st.session_state.feedback_request = None
+        st.session_state.pop("feedback_notice", None)
+        interrupted = False
+        history = st.session_state.agent_messages + [HumanMessage(content=prompt)]
+        history_length = len(history)
+        st.session_state.agent_messages = history
+        with chat_viewport:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            with st.chat_message("assistant"):
+                draft_label = st.empty()
+                assistant_placeholder = st.empty()
+        stream = ReplyStream()
+        started = perf_counter()
+        draft_label.caption("Draft response (being checked)")
+        assistant_placeholder.markdown("Thinking...")
+        try:
+            for stream_kind, payload in leasing_app.stream(
+                {"messages": history},
+                stream_mode=["values", "messages"],
+                config={"recursion_limit": 20},
+            ):
+                if stream_kind == "values":
+                    st.session_state.agent_messages = payload["messages"]
+                elif stream_kind == "messages":
+                    message_chunk, chunk_meta = payload
+                    text = stream.accept(message_chunk, chunk_meta)
+                    if text is not None:
+                        assistant_placeholder.markdown(text or "Checking property records...")
+        except Exception:
+            interrupted = True
+            messages = st.session_state.agent_messages
+            answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+            for m in list(messages):
+                if isinstance(m, AIMessage):
+                    for call in m.tool_calls:
+                        if call["id"] not in answered:
+                            messages.append(ToolMessage(content="Outcome unknown after interruption. Do not retry a booking or hold automatically.", tool_call_id=call["id"], name=call["name"]))
+            messages.append(AIMessage(content="The request was interrupted. A booking or hold may have completed; please check before trying it again.", response_metadata={"analytics_outcome": "interrupted"}))
+        final_messages = st.session_state.agent_messages
+        final_index = next((i for i in range(len(final_messages) - 1, history_length - 1, -1)
+                            if isinstance(final_messages[i], AIMessage) and not final_messages[i].tool_calls), None)
+        if final_index is not None:
+            final = final_messages[final_index]
+            final = final.model_copy(update={"response_metadata": {
+                **final.response_metadata, "request_elapsed_seconds": round(perf_counter() - started, 2),
+            }})
+            final_messages[final_index] = final
+            # Replace the draft before telemetry I/O, not only on the following rerun.
+            assistant_placeholder.markdown(final.content)
+            draft_label.caption(reply_caption(final))
+        else:
+            assistant_placeholder.empty()
+            draft_label.empty()
+        if finish_request(tracking, st.session_state.agent_messages, error="interrupted" if interrupted else None):
+            st.session_state.feedback_request = tracking
+            demo_summary.clear()
+        st.rerun()
