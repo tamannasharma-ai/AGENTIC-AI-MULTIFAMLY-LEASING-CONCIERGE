@@ -18,12 +18,13 @@ try:
 except FileNotFoundError:
     pass
 
-from agent3 import leasing_app, search_vacant_units, upsert_lead, reset_demo_data
+from agent3 import leasing_app, search_vacant_units, upsert_lead, reset_demo_data, get_db_connection
 from leasing_utils import PROPERTY_NAME, PROPERTY_ADDRESS, OFFICE_HOURS, osm_embed_url
 from leasing_analytics import begin_request, finish_request, save_feedback, load_demo_summary, enabled as analytics_enabled
 from chat_suggestions import SUGGESTED_QUESTIONS, BLOCKED_EXAMPLE_INDEX
 from demo_features import ARCHITECTURE, ReplyStream, consume_request, demo_controls_enabled, reply_caption
 from conversation_state import remember_conversation, switch_conversation
+from choice_ui import save_button, render_shortlist, ask, navigate
 
 
 st.set_page_config(page_title=f"{PROPERTY_NAME} | Leasing", page_icon=":material/apartment:", layout="wide")
@@ -41,8 +42,8 @@ def as_list(value):
     return value if isinstance(value, list) else []
 
 
-def render_units(units):
-    for unit in units:
+def render_units(units, context="inventory"):
+    for position, unit in enumerate(units):
         with st.container(border=True):
             st.subheader(f"Unit {unit['unit_number']}")
             st.write(f"${float(unit['rent_usd']):,.0f}/month | {unit['bedrooms']} bed | {unit['bathrooms']} bath | {unit['sqft']} sq ft")
@@ -54,6 +55,7 @@ def render_units(units):
             amenities = as_list(unit.get("amenities"))
             if amenities:
                 st.caption(" | ".join(str(a) for a in amenities[:6]))
+            save_button(unit, f"save_{context}_{position}_{unit['unit_number']}")
 
 
 @st.fragment(run_every="1s")
@@ -69,7 +71,7 @@ def render_tool(message, index):
     content = str(message.content)
     try:
         if message.name == "search_vacant_units":
-            render_units(as_list(content))
+            render_units(as_list(content), f"chat_{index}")
         elif content.startswith("TOUR_CONFIRMED::"):
             payload, _ = json.JSONDecoder().raw_decode(content.removeprefix("TOUR_CONFIRMED::"))
             st.success(f"Unit {payload['unit_number']}: {payload['scheduled_display']}")
@@ -85,6 +87,7 @@ st.session_state.setdefault("agent_messages", [])
 st.session_state.setdefault("inventory", [])
 st.session_state.setdefault("analytics_session_id", str(uuid4()))
 st.session_state.setdefault("feedback_request", None)
+st.session_state.setdefault("shortlist", {})
 remember_conversation(st.session_state)
 
 
@@ -164,7 +167,10 @@ with st.sidebar:
                 st.caption("Metrics temporarily unavailable.")
         else:
             st.caption("Analytics disabled.")
-chat_tab, homes_tab, location_tab, contact_tab = st.tabs(["Concierge", "Available Homes", "Location", "Contact"])
+chat_tab, homes_tab, shortlist_tab, location_tab, contact_tab = st.tabs(
+    ["Concierge", "Available Homes", "Shortlist", "Location", "Contact"], key="main_tab", on_change="rerun")
+with shortlist_tab:
+    render_shortlist(get_db_connection, permit_request, bool(os.getenv("GROQ_API_KEY")))
 with homes_tab:
     inventory_tab = st.container()
     with inventory_tab:
@@ -224,6 +230,7 @@ with homes_tab:
 
 with chat_tab:
     chat_ready = bool(os.getenv("GROQ_API_KEY"))
+    action_prompt = st.session_state.pop("pending_action", None)
     suggested_prompt = SUGGESTED_QUESTIONS[BLOCKED_EXAMPLE_INDEX][0] if blocked_example_clicked else None
     suggestion_index = BLOCKED_EXAMPLE_INDEX if blocked_example_clicked else None
     chat_viewport = st.container(height=560, border=False, key="chat_viewport", autoscroll=bool(st.session_state.agent_messages))
@@ -253,6 +260,18 @@ with chat_tab:
                         caption = reply_caption(message)
                         if caption:
                             st.caption(caption)
+        current_turn = []
+        for message in reversed(st.session_state.agent_messages):
+            if isinstance(message, HumanMessage):
+                break
+            current_turn.append(message)
+        if any(isinstance(m, ToolMessage) and m.name == "search_vacant_units" and as_list(str(m.content)) for m in current_turn):
+            with st.container(horizontal=True):
+                st.button("Compare shortlisted homes", icon=":material/compare_arrows:", on_click=navigate, args=("Shortlist",))
+                st.button("View pet policy", icon=":material/pets:", disabled=not chat_ready,
+                          on_click=ask, args=("What are the current pet rules, deposits and monthly fees?",))
+                st.button("Show tour times", icon=":material/calendar_month:", disabled=not chat_ready,
+                          on_click=ask, args=("Show available tour times for the homes we just discussed. Do not book or hold anything yet.",))
         feedback_request = st.session_state.feedback_request
         if feedback_request is not None and analytics_enabled():
             st.caption("How helpful was this reply?")
@@ -261,7 +280,7 @@ with chat_tab:
             if st.session_state.get("feedback_notice"):
                 st.caption(st.session_state.feedback_notice)
     typed_prompt = st.chat_input("Ask about apartments, policies or tour times", disabled=not chat_ready, submit_mode="disable")
-    prompt = suggested_prompt or typed_prompt
+    prompt = suggested_prompt or action_prompt or typed_prompt
     if not chat_ready:
         st.info("Chat is temporarily unavailable.")
     if prompt and permit_request():

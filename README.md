@@ -104,6 +104,15 @@ Keep `DEMO_CONTROLS=false` for public hosting. Never expose the presenter server
 
 The GitHub Actions workflow in `.github/workflows/tests.yml` runs the unit/UI suite on push and pull requests, with read-only repository permissions, no service secrets and a ten-minute job timeout. `requirements-ci.txt` installs only test-needed packages, avoiding embedding-model downloads. It starts running only after this project is pushed to GitHub with Actions enabled. Local tests do not prove a hosted workflow run has passed. Standard GitHub-hosted runners remain subject to the account's included usage and billing settings; do not enable paid overages for this demo. See the [official Python workflow guide](https://docs.github.com/en/actions/tutorials/build-and-test-code/python).
 
+## Apartment Decision Tools
+
+- Save up to three homes from inventory or chat results in the session-only **Shortlist** tab. Removing a home invalidates the last cost snapshot. Saved search results are explicitly labelled as potentially outdated.
+- **Refresh availability and calculate** reads current unit records and policy documents from PostgreSQL, without an LLM call or booking/hold write. It shares the session request limit. Unavailable or missing homes do not receive estimates; failed refreshes discard old estimates.
+- Estimates separate recurring charges, one-time fees and refundable deposits. The first-month subtotal assumes a full month, includes the selected lease/parking options and excludes unknown usage charges. Discounts and admin waivers are not automatically applied. The pet-deposit basis is ambiguous in the current policy and requires confirmation.
+- `home_choices.SUPPORTED_POLICIES` recognizes complete policy documents, not isolated dollar amounts. Changed, missing or duplicated policies produce unknown charges. When approved policy wording changes, update the matching cost rules and tests together. Source documents and the read timestamp appear with the estimate.
+- Contextual buttons open comparison or submit read-only tour/policy questions through the existing guarded chat path. They never directly create reservations or contact records. These dynamic prompts use the existing typed-chat analytics category; shortlist clicks and calculator runs are not yet separate conversion events.
+- Uses the existing dependencies and database; no additional subscription or API key. Session shortlists are not durable across reconnects.
+
 ## Hosting
 
 The app can run locally at no hosting cost. For a hosted demo, configure the same keys in Streamlit secrets on a free Community Cloud account, subject to its current resource limits. MiniLM can be memory-intensive on small instances. Secrets and contact details should never be committed.
