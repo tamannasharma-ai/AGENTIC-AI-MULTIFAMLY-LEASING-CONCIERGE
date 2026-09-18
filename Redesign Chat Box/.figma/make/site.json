@@ -1,0 +1,10 @@
+{
+  "description": "Enables seamless, non-scrolling chat interactions with an intuitive interface inspired by ChatGPT, enhancing user communication experience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

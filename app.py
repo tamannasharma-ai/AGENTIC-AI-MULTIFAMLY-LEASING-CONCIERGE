@@ -1,7 +1,8 @@
 """Leasing portal with complete session-scoped agent history."""
 import json
 import os
-from time import perf_counter
+from pathlib import Path
+from time import perf_counter, sleep
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -22,12 +23,13 @@ from leasing_utils import PROPERTY_NAME, PROPERTY_ADDRESS, OFFICE_HOURS, osm_emb
 from leasing_analytics import begin_request, finish_request, save_feedback, load_demo_summary, enabled as analytics_enabled
 from chat_suggestions import SUGGESTED_QUESTIONS, BLOCKED_EXAMPLE_INDEX
 from demo_features import ARCHITECTURE, ReplyStream, consume_request, demo_controls_enabled, reply_caption
+from conversation_state import remember_conversation, switch_conversation
 
 
 st.set_page_config(page_title=f"{PROPERTY_NAME} | Leasing", page_icon=":material/apartment:", layout="wide")
-st.title(PROPERTY_NAME)
-st.caption(PROPERTY_ADDRESS)
-st.caption("Fictional community demo. Sample inventory, policies, contact number and illustrative photos.")
+st.html(Path(__file__).with_name("chat_theme.css"))
+st.subheader(PROPERTY_NAME)
+st.caption(f"{PROPERTY_ADDRESS} | Fictional community demo")
 
 
 def as_list(value):
@@ -83,6 +85,7 @@ st.session_state.setdefault("agent_messages", [])
 st.session_state.setdefault("inventory", [])
 st.session_state.setdefault("analytics_session_id", str(uuid4()))
 st.session_state.setdefault("feedback_request", None)
+remember_conversation(st.session_state)
 
 
 def record_rating(request, key):
@@ -105,6 +108,26 @@ def demo_summary():
 
 blocked_example_clicked = False
 with st.sidebar:
+    st.subheader("Leasing Concierge")
+    if st.button("New chat", icon=":material/edit_square:", width="stretch"):
+        switch_conversation(st.session_state)
+        st.rerun()
+    st.caption("RECENT CONVERSATIONS")
+    for conversation_id, conversation in reversed(list(st.session_state.conversations.items())):
+        if st.button(conversation["title"], key=f"conversation_{conversation_id}",
+                     icon=":material/chat_bubble:", width="stretch",
+                     type="primary" if conversation_id == st.session_state.conversation_id else "secondary"):
+            switch_conversation(st.session_state, conversation_id)
+            st.rerun()
+    st.caption("Chat history lasts for this browser session.")
+    if st.button("Clear conversation", icon=":material/delete:"):
+        st.session_state.agent_messages = []
+        st.session_state.feedback_request = None
+        st.session_state.pop("feedback_notice", None)
+        st.rerun()
+    with st.expander("How this works", icon=":material/account_tree:"):
+        st.markdown(f"```mermaid\n{ARCHITECTURE}\n```")
+    st.divider()
     if demo_controls_enabled(st.get_option("server.address")):
         st.subheader("Demo controls")
         if st.button("Reset demo", icon=":material/restart_alt:", help="Clean expired holds, clear this conversation and refresh cached lookups. Active holds and tours are preserved."):
@@ -141,13 +164,9 @@ with st.sidebar:
                 st.caption("Metrics temporarily unavailable.")
         else:
             st.caption("Analytics disabled.")
-with st.expander("How this works", icon=":material/account_tree:"):
-    st.markdown(f"```mermaid\n{ARCHITECTURE}\n```")
-
-
-left, right = st.columns([1, 1.2], gap="large")
-with left:
-    inventory_tab, location_tab, contact_tab = st.tabs(["Available Homes", "Location", "Contact"])
+chat_tab, homes_tab, location_tab, contact_tab = st.tabs(["Concierge", "Available Homes", "Location", "Contact"])
+with homes_tab:
+    inventory_tab = st.container()
     with inventory_tab:
         with st.form("inventory_search"):
             beds = st.selectbox("Bedrooms", ["Any", "Studio", "1", "2", "3", "4"])
@@ -203,30 +222,27 @@ with left:
                     st.error("Your request could not be saved. Please try again later.")
                     finish_request(tracking, error="exception")
 
-with right:
-    st.subheader("Leasing Concierge")
-    if st.button("Clear conversation", icon=":material/delete:"):
-        st.session_state.agent_messages = []
-        st.session_state.feedback_request = None
-        st.session_state.pop("feedback_notice", None)
-        st.rerun()
+with chat_tab:
     chat_ready = bool(os.getenv("GROQ_API_KEY"))
     suggested_prompt = SUGGESTED_QUESTIONS[BLOCKED_EXAMPLE_INDEX][0] if blocked_example_clicked else None
     suggestion_index = BLOCKED_EXAMPLE_INDEX if blocked_example_clicked else None
-    suggestion_columns = st.columns(2)
-    for index, (question, icon) in enumerate(SUGGESTED_QUESTIONS):
-        if index == BLOCKED_EXAMPLE_INDEX:
-            continue
-        if suggestion_columns[index % 2].button(
-            question, key=f"suggestion_{index}", icon=icon,
-            width="stretch", disabled=not chat_ready,
-        ):
-            suggested_prompt = question
-            suggestion_index = index
-    chat_viewport = st.container(height=560)
+    chat_viewport = st.container(height=560, border=False, key="chat_viewport", autoscroll=bool(st.session_state.agent_messages))
     with chat_viewport:
         if not st.session_state.agent_messages:
-            st.write("Welcome. What are you looking for in your next home?")
+            st.subheader("Find your next home")
+            st.write("What are you looking for?")
+        with st.expander("Explore apartments and policies", expanded=not st.session_state.agent_messages):
+            with st.container(key="chat_suggestions"):
+                suggestion_columns = st.columns(2)
+                for index, (question, icon) in enumerate(SUGGESTED_QUESTIONS):
+                    if index == BLOCKED_EXAMPLE_INDEX:
+                        continue
+                    if suggestion_columns[index % 2].button(
+                        question, key=f"suggestion_{index}", icon=icon,
+                        width="stretch", disabled=not chat_ready,
+                    ):
+                        suggested_prompt = question
+                        suggestion_index = index
         for index, message in enumerate(st.session_state.agent_messages):
             if isinstance(message, ToolMessage):
                 render_tool(message, index)
@@ -266,6 +282,8 @@ with right:
                 draft_label = st.empty()
                 assistant_placeholder = st.empty()
         stream = ReplyStream()
+        previous_draft = ""
+        pacing_budget = 8.0
         started = perf_counter()
         draft_label.caption("Draft response (being checked)")
         assistant_placeholder.markdown("Thinking...")
@@ -281,6 +299,12 @@ with right:
                     message_chunk, chunk_meta = payload
                     text = stream.accept(message_chunk, chunk_meta)
                     if text is not None:
+                        # Pace visible changes only; cap added latency for long replies.
+                        if text and text != previous_draft and pacing_budget > 0:
+                            delay = min(0.10, pacing_budget)
+                            sleep(delay)
+                            pacing_budget -= delay
+                        previous_draft = text
                         assistant_placeholder.markdown(text or "Checking property records...")
         except Exception:
             interrupted = True

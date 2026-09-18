@@ -226,6 +226,10 @@ def test_form_search_is_tracked_without_contact_details(recorded, monkeypatch):
 
 
 def test_dashboard_fails_closed_without_local_listener(monkeypatch):
+    import streamlit as st
+
+    original = st.get_option
+    monkeypatch.setattr(st, "get_option", lambda key: "0.0.0.0" if key == "server.address" else original(key))
     monkeypatch.setattr(analytics, "load_events", MagicMock(side_effect=AssertionError("Must not query")))
     app = AppTest.from_file("../metrics_app.py", default_timeout=20).run()
     assert not app.exception

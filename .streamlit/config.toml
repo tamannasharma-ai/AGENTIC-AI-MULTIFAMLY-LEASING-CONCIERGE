@@ -5,3 +5,22 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#10a37f"
+backgroundColor = "#212121"
+secondaryBackgroundColor = "#2f2f2f"
+textColor = "#ececec"
+borderColor = "#3e3e3e"
+font = "sans-serif"
+baseFontSize = 15
+headingFontSizes = ["28px", "24px", "20px", "16px", "14px", "12px"]
+baseRadius = "8px"
+buttonRadius = "8px"
+showWidgetBorder = true
+showSidebarBorder = true
+
+[theme.sidebar]
+backgroundColor = "#171717"
+secondaryBackgroundColor = "#262626"
