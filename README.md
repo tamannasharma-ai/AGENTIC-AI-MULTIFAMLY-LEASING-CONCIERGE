@@ -15,6 +15,7 @@ The demo represents **The Standard Residences**, at the fictional community addr
 - [Optional market context](#optional-market-context)
 - [Success metrics](#success-metrics)
 - [Interview demo](#interview-demo)
+- [Suggested demo walkthrough](#suggested-demo-walkthrough)
 - [Apartment decision tools](#apartment-decision-tools)
 - [Hosting](#hosting)
 - [Maintenance and troubleshooting](#maintenance-and-troubleshooting)
@@ -169,6 +170,8 @@ Core database tables are `units` (inventory), `property_knowledge` (policy text 
 
 Tests use mocked external services and do not send email or change your database. `test_db.py` is a separate manual connection diagnostic, excluded from test collection. `sample.py` contains a product document rather than executable Python.
 
+Latest local verification (September 19, 2026): **122 tests passed**. This is a dated local result, not a claim about hosted CI or production reliability. Coverage includes required-amenity filtering before pagination, preference ranking SQL, one-constraint alternatives, explicit acceptance and visible-filter updates, shortlist limits, cost-policy validation, conversation switching, guardrails and booking safeguards. Desktop and mobile browser checks also exercised live inventory search, cost estimates and alternative acceptance; they did not create bookings, holds or contact requests.
+
 For the opt-in PostgreSQL integration check, run `python tests/integration_check.py`. It creates a temporary schema inside a transaction, exercises booking/hold/search SQL, and rolls all test changes back. Email is mocked. It needs schema-creation privileges on the configured database.
 
 `python tests/analytics_integration_check.py` similarly verifies analytics migrations, idempotent writes, feedback edits/removal and mode separation inside a rolled-back temporary schema.
@@ -218,17 +221,28 @@ $env:ANALYTICS_MODE = "demo"
 .\.venv\Scripts\python.exe -B -m streamlit run app.py --server.address 127.0.0.1 --server.port 8502 --server.headless true --browser.gatherUsageStats false
 ```
 
-- Chat consumes LangGraph `messages` token events alongside `values` snapshots. Live output is labelled as an unchecked draft; the completed evaluator reply replaces it before analytics writes. Drafts can contain inaccuracies before evaluation, so do not treat them as final availability, prices or booking confirmations. No artificial typing delay or extra model call is used. Tool arguments/reasoning blocks are not rendered as reply text, and separate graph steps/fallback attempts do not get concatenated.
-- Reply captions show total processing time across guardrails, tools, failed attempts and evaluation, plus the actual serving model. The model routes/generates the draft; factual final prose can be replaced by the deterministic evaluator. A guardrail refusal is not attributed to a model. This timing excludes analytics writes and browser paint.
+- Chat consumes LangGraph `messages` token events alongside `values` snapshots. Live output is labelled as an unchecked draft; the completed evaluator reply replaces it before analytics writes. Drafts can contain inaccuracies before evaluation, so do not treat them as final availability, prices or booking confirmations. Visible text changes are paced with a 100 ms pause, capped at eight seconds of added delay per request. No extra model call is used for this pacing. Tool arguments/reasoning blocks are not rendered as reply text, and separate graph steps/fallback attempts do not get concatenated.
+- Reply captions show total processing time across guardrails, tools, failed attempts, display pacing and evaluation, plus the actual serving model. The model routes/generates the draft; factual final prose can be replaced by the deterministic evaluator. A guardrail refusal is not attributed to a model. This timing excludes analytics writes and browser paint; it is not raw model latency.
 - **Reset demo** clears the current conversation/results, expires already-stale holds, and clears policy/market caches. It does not cancel active holds, pending reservations, confirmed reservations or tours, and it does not delete analytics. The backend repeats the demo/local checks. This is cleanup, not a destructive database reseed.
 - The presenter sidebar shows blocked prompts, average helpfulness with sample size, and fallback-trigger rate for demo traffic over the past 24 hours. Metrics refresh on demand or after a 30-second cache TTL. The fallback denominator includes only requests with recorded model attempts; older records and guardrail-only requests are not silently treated as primary successes. Both attempted and successful fallbacks count as triggers.
 - The read-only **How this works** diagram follows the implemented guardrail/agent/tools/evaluator graph. It is generated from this project's architecture, not a copied portfolio image.
 - Policy/embedding lookup results and market summaries cache for five minutes, bounded to 256 and 32 keys respectively. Inventory, tour availability, holds, bookings and lead writes remain uncached. Policy/market edits can take up to five minutes to appear unless the presenter resets the read caches.
-- All chat/search/consented-contact submissions share a limit of ten requests per minute per browser session. Ordinary rerenders do not consume a slot, and clearing/resetting the conversation does not remove the limit. This is a lightweight quota guard, not abuse protection: new sessions, other processes and direct tool calls can bypass it.
+- Chat, inventory search, consented-contact submissions, cost refreshes and alternative checks share a limit of ten requests per minute per browser session. An alternatives check can make several inventory queries while consuming one slot. Ordinary rerenders do not consume a slot, and clearing/resetting the conversation does not remove the limit. This is a lightweight quota guard, not abuse protection: new sessions, other processes and direct tool calls can bypass it.
 
 Keep `DEMO_CONTROLS=false` for public hosting. Never expose the presenter server through a public proxy/tunnel without real staff authentication; a loopback listener is not authentication against a proxy. No email hash is needed for the new analytics because emails are omitted entirely, including in failure logs.
 
 The GitHub Actions workflow in `.github/workflows/tests.yml` runs the unit/UI suite on push and pull requests, with read-only repository permissions, no service secrets and a ten-minute job timeout. `requirements-ci.txt` installs only test-needed packages, avoiding embedding-model downloads. It starts running only after this project is pushed to GitHub with Actions enabled. Local tests do not prove a hosted workflow run has passed. Standard GitHub-hosted runners remain subject to the account's included usage and billing settings; do not enable paid overages for this demo. See the [official Python workflow guide](https://docs.github.com/en/actions/tutorials/build-and-test-code/python).
+
+## Suggested demo walkthrough
+
+1. Launch the local presenter server with the command above and open `http://127.0.0.1:8502`. Choose another unused port if needed.
+2. Open **Available Homes**, select **Dishwasher** as a must-have and **Balcony** as a nice-to-have, then search. Open **Why this home?** on a result to show the recorded matches and unverified preferences.
+3. Try a rent limit below the cheapest available home. Select **Check one-change alternatives** and inspect the specific trade-off. Nothing changes until **Accept change and search** is selected; acceptance updates the visible form and rechecks inventory.
+4. Shortlist two or three homes and compare them in **Shortlist**. Use **Refresh availability and calculate** to show current known charges, excluded costs and source policies. These are estimates, not binding quotes.
+5. Select **Ask about these homes** or a tour-availability action to continue in chat. These buttons request information; the test walkthrough does not require creating a booking or hold.
+6. With local presenter metrics enabled, select **Is this neighborhood safe?** to demonstrate a guardrail refusal and the blocked-prompt metric. This intentionally records demo traffic when analytics is enabled.
+
+Inventory, availability and counts can change between runs. The walkthrough is a sequence of actions, not a guarantee of particular units, prices or metric values. Shortlists and conversations last only for the current session.
 
 ## Apartment Decision Tools
 
@@ -250,7 +264,7 @@ Model IDs are configurable; check the [Groq model catalog](https://console.groq.
 
 The default primary is `qwen/qwen3.8-27b`; the fallback is `openai/gpt-oss-20b`, both verified in the account's model catalog on September 18, 2026. The fallback must support custom function calling: [Groq Compound does not support user-provided tools](https://console.groq.com/docs/compound). Qwen reasoning is requested separately from answer text, so internal reasoning is not displayed as a streamed reply. Availability and free-plan limits can change; environment overrides remain supported.
 
-Remaining production work includes authentication, durable chat storage, cancellation flows and load testing. Tool-backed answers use deterministic rendering; arbitrary conversational prose is not a general semantic fact-checking system.
+Remaining production work includes authentication, durable chat storage, cancellation flows and load testing. A dedicated pre-transaction confirmation screen, reviewed leasing-agent handoff brief and in-app reliability scorecard are proposed enhancements, not implemented features. Tool-backed answers use deterministic rendering; arbitrary conversational prose is not a general semantic fact-checking system.
 
 `reconcile_demo_records.py` backs up and repairs legacy expired pending reservations and conflicting/out-of-hours demo tours. Run only for this fictional demo. It retains record IDs and contacts, and sends no notifications. `seed_kb.py` backs up existing policies and updates all eight categories using local embeddings.
 

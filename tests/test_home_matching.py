@@ -69,7 +69,7 @@ def test_ui_requires_acceptance_and_updates_visible_filters(monkeypatch):
     home = dict(unit_number="201", rent_usd=1600, bedrooms=1, bathrooms=1, sqft=750, amenities=[])
     search = MagicMock(side_effect=["No vacant units found matching those exact filters.",
                                    json.dumps([home]), json.dumps([home])])
-    monkeypatch.setattr(agent3.search_vacant_units, "invoke", search)
+    monkeypatch.setattr(agent3, "search_vacant_units", MagicMock(invoke=search))
     app = AppTest.from_file("../app.py", default_timeout=20).run()
     app.number_input(key="search_budget").set_value(1500)
     next(b for b in app.button if b.label == "Search homes").click().run()
@@ -89,7 +89,7 @@ def test_ui_requires_acceptance_and_updates_visible_filters(monkeypatch):
 
 def test_page_overflow_does_not_offer_relaxation(monkeypatch):
     import agent3
-    monkeypatch.setattr(agent3.search_vacant_units, "invoke", MagicMock(return_value="No vacant units found matching those exact filters."))
+    monkeypatch.setattr(agent3, "search_vacant_units", MagicMock(invoke=MagicMock(return_value="No vacant units found matching those exact filters.")))
     app = AppTest.from_file("../app.py", default_timeout=20).run()
     app.number_input(key="search_page").set_value(9)
     next(b for b in app.button if b.label == "Search homes").click().run()

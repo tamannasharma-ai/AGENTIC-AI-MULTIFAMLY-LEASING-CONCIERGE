@@ -184,16 +184,21 @@ with homes_tab:
     with inventory_tab:
         if st.session_state.get("accepted_filters"):
             accepted_values = st.session_state.accepted_filters
-            st.session_state.search_budget = accepted_values.get("max_rent") or 0
+            st.session_state.search_budget = float(accepted_values.get("max_rent") or 0)
             st.session_state.search_required = accepted_values.get("required_amenities", [])
+            st.session_state.search_preferred = accepted_values.get("preferred_amenities", [])
+            accepted_beds = accepted_values.get("bedrooms")
+            st.session_state.search_bedrooms = "Any" if accepted_beds is None else "Studio" if accepted_beds == 0 else str(accepted_beds)
+            st.session_state.search_unit = accepted_values.get("unit_number") or ""
+            st.session_state.search_specials = accepted_values.get("specials_only", False)
             st.session_state.search_page = 1
         with st.form("inventory_search"):
-            beds = st.selectbox("Bedrooms", ["Any", "Studio", "1", "2", "3", "4"])
+            beds = st.selectbox("Bedrooms", ["Any", "Studio", "1", "2", "3", "4"], key="search_bedrooms")
             budget = st.number_input("Maximum monthly rent ($)", min_value=0.0, value=3000.0, step=100.0, key="search_budget")
-            number = st.text_input("Unit number (optional)")
-            specials = st.checkbox("Move-in specials only")
+            number = st.text_input("Unit number (optional)", key="search_unit")
+            specials = st.checkbox("Move-in specials only", key="search_specials")
             required = st.multiselect("Must-have amenities", list(AMENITIES), format_func=AMENITIES.get, key="search_required")
-            preferred_features = st.multiselect("Nice-to-have amenities", list(AMENITIES), format_func=AMENITIES.get)
+            preferred_features = st.multiselect("Nice-to-have amenities", list(AMENITIES), format_func=AMENITIES.get, key="search_preferred")
             page = st.number_input("Results page", min_value=1, value=1, step=1, key="search_page")
             searched = st.form_submit_button("Search homes", icon=":material/search:")
         accepted = st.session_state.pop("accepted_filters", None)
@@ -236,7 +241,7 @@ with homes_tab:
                 if not st.session_state.alternatives:
                     st.info("No one-change alternatives found. Consider revising your search.")
                 for index, proposal in enumerate(st.session_state.alternatives):
-                    st.write(f"{proposal['label']} | Example: Unit {proposal['unit']}")
+                    st.text(f"{proposal['label']} | Example: Unit {proposal['unit']}")
                     if st.button("Accept change and search", key=f"alternative_{index}", icon=":material/search:"):
                         st.session_state.accepted_filters = proposal["filters"]
                         st.rerun()
