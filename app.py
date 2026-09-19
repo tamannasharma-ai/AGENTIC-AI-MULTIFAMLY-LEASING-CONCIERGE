@@ -25,6 +25,7 @@ from chat_suggestions import SUGGESTED_QUESTIONS, BLOCKED_EXAMPLE_INDEX
 from demo_features import ARCHITECTURE, ReplyStream, consume_request, demo_controls_enabled, reply_caption
 from conversation_state import remember_conversation, switch_conversation
 from choice_ui import save_button, render_shortlist, ask, navigate
+from home_matching import AMENITIES, match_reasons, find_alternatives
 
 
 st.set_page_config(page_title=f"{PROPERTY_NAME} | Leasing", page_icon=":material/apartment:", layout="wide")
@@ -55,6 +56,11 @@ def render_units(units, context="inventory"):
             amenities = as_list(unit.get("amenities"))
             if amenities:
                 st.caption(" | ".join(str(a) for a in amenities[:6]))
+            if context == "inventory" and st.session_state.get("inventory_filters"):
+                with st.expander("Why this home?"):
+                    for reason in match_reasons(unit, st.session_state.inventory_filters):
+                        st.write(reason)
+                    st.caption("Based on recorded unit features. Unlisted features need confirmation.")
             save_button(unit, f"save_{context}_{position}_{unit['unit_number']}")
 
 
@@ -138,6 +144,8 @@ with st.sidebar:
                 st.session_state.reset_notice = reset_demo_data()
                 st.session_state.agent_messages = []
                 st.session_state.inventory = []
+                for state_key in ("inventory_filters", "alternatives", "accepted_filters", "no_exact_matches"):
+                    st.session_state.pop(state_key, None)
                 st.session_state.feedback_request = None
                 st.session_state.pop("feedback_notice", None)
                 demo_summary.clear()
@@ -174,18 +182,32 @@ with shortlist_tab:
 with homes_tab:
     inventory_tab = st.container()
     with inventory_tab:
+        if st.session_state.get("accepted_filters"):
+            accepted_values = st.session_state.accepted_filters
+            st.session_state.search_budget = accepted_values.get("max_rent") or 0
+            st.session_state.search_required = accepted_values.get("required_amenities", [])
+            st.session_state.search_page = 1
         with st.form("inventory_search"):
             beds = st.selectbox("Bedrooms", ["Any", "Studio", "1", "2", "3", "4"])
-            budget = st.number_input("Maximum monthly rent ($)", min_value=0, value=3000, step=100)
+            budget = st.number_input("Maximum monthly rent ($)", min_value=0.0, value=3000.0, step=100.0, key="search_budget")
             number = st.text_input("Unit number (optional)")
             specials = st.checkbox("Move-in specials only")
-            page = st.number_input("Results page", min_value=1, value=1, step=1)
+            required = st.multiselect("Must-have amenities", list(AMENITIES), format_func=AMENITIES.get, key="search_required")
+            preferred_features = st.multiselect("Nice-to-have amenities", list(AMENITIES), format_func=AMENITIES.get)
+            page = st.number_input("Results page", min_value=1, value=1, step=1, key="search_page")
             searched = st.form_submit_button("Search homes", icon=":material/search:")
-        if searched and permit_request():
+        accepted = st.session_state.pop("accepted_filters", None)
+        if (searched or accepted is not None) and permit_request():
+            filters = accepted or {"max_rent": budget or None, "bedrooms": None if beds == "Any" else 0 if beds == "Studio" else int(beds), "unit_number": number or None, "specials_only": specials, "page": page,
+                                   "required_amenities": required, "preferred_amenities": preferred_features}
+            st.session_state.inventory_filters = filters
+            st.session_state.pop("alternatives", None)
+            st.session_state.no_exact_matches = False
             tracking = begin_request(st.session_state.analytics_session_id, "inventory", task="search")
             try:
-                result = search_vacant_units.invoke({"max_rent": budget or None, "bedrooms": None if beds == "Any" else 0 if beds == "Studio" else int(beds), "unit_number": number or None, "specials_only": specials, "page": page})
+                result = search_vacant_units.invoke(filters)
                 st.session_state.inventory = as_list(result)
+                st.session_state.no_exact_matches = not st.session_state.inventory and filters["page"] == 1 and result.startswith("No vacant units")
                 if not st.session_state.inventory:
                     st.info(result)
                 finish_request(tracking, tool_result=("search_vacant_units", result))
@@ -199,6 +221,25 @@ with homes_tab:
             size = int(first.get("page_size", 5))
             st.caption(f"{total} matching homes | Page {first.get('page', 1)} of {(total + size - 1) // size}")
         render_units(st.session_state.inventory)
+        if st.session_state.get("inventory_filters"):
+            applied = st.session_state.inventory_filters
+            st.caption(f"Applied rent limit: {'None' if applied.get('max_rent') is None else '$' + format(applied['max_rent'], ',.2f')} | Must-haves: {', '.join(AMENITIES[x] for x in applied.get('required_amenities', [])) or 'None'}")
+        if st.session_state.get("no_exact_matches"):
+            st.info("No exact matches. Alternatives keep your bedroom, unit-number and specials filters unchanged.")
+            if st.button("Check one-change alternatives", icon=":material/tune:") and permit_request():
+                st.session_state.pop("alternatives", None)
+                try:
+                    st.session_state.alternatives = find_alternatives(search_vacant_units.invoke, st.session_state.inventory_filters)
+                except Exception:
+                    st.error("Alternatives could not be checked. Please try again.")
+            if "alternatives" in st.session_state:
+                if not st.session_state.alternatives:
+                    st.info("No one-change alternatives found. Consider revising your search.")
+                for index, proposal in enumerate(st.session_state.alternatives):
+                    st.write(f"{proposal['label']} | Example: Unit {proposal['unit']}")
+                    if st.button("Accept change and search", key=f"alternative_{index}", icon=":material/search:"):
+                        st.session_state.accepted_filters = proposal["filters"]
+                        st.rerun()
     with location_tab:
         st.write(OFFICE_HOURS)
         st.iframe(osm_embed_url(), height=320)

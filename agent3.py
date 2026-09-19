@@ -23,6 +23,7 @@ import resend
 
 from db_schema import ensure_schema
 from demo_features import demo_controls_enabled
+from home_matching import AMENITIES
 from leasing_utils import (
     PROPERTY_NAME,
     PROPERTY_ADDRESS,
@@ -227,9 +228,13 @@ def dispatch_tour_confirmation_email(
 @tool
 def search_vacant_units(max_rent: float | None = None, bedrooms: int | None = None,
                        unit_number: str | None = None, specials_only: bool = False,
-                       page: int = 1, page_size: int = 5) -> str:
+                       page: int = 1, page_size: int = 5,
+                       required_amenities: list[str] | None = None,
+                       preferred_amenities: list[str] | None = None) -> str:
     """Search available vacant apartment units in the community by max rent or bedroom count.
     Automatically identifies units eligible for move-in concessions if vacant over 45 days.
+    Required amenities are strict filters; preferred amenities rank matches before rent.
+    Use only explicitly requested amenity preferences, never inferred personal attributes.
     """
     if max_rent is not None and max_rent < 0:
         return "Maximum rent must be a positive number."
@@ -237,6 +242,10 @@ def search_vacant_units(max_rent: float | None = None, bedrooms: int | None = No
         return "Bedroom count must be a positive integer."
     if page < 1 or not 1 <= page_size <= 25:
         return "Page must be positive and page size must be between 1 and 25."
+    required_amenities = list(dict.fromkeys(required_amenities or []))
+    preferred_amenities = list(dict.fromkeys(preferred_amenities or []))
+    if any(feature not in AMENITIES for feature in required_amenities + preferred_amenities):
+        return "Choose supported apartment amenities."
 
     conn = get_db_connection()
     try:
@@ -264,7 +273,14 @@ def search_vacant_units(max_rent: float | None = None, bedrooms: int | None = No
                 params.append(normalize_unit_number(unit_number))
             if specials_only:
                 query += " AND vacant_since <= NOW() - INTERVAL '45 days'"
-            query += " ORDER BY rent_usd ASC, unit_number ASC LIMIT %s OFFSET %s;"
+            if required_amenities:
+                query += " AND COALESCE(amenities, '[]'::jsonb) ?& %s::text[]"
+                params.append(required_amenities)
+            query += " ORDER BY "
+            if preferred_amenities:
+                query += "(SELECT COUNT(*) FROM unnest(%s::text[]) AS pref(feature) WHERE COALESCE(amenities, '[]'::jsonb) ? pref.feature) DESC, "
+                params.append(preferred_amenities)
+            query += "rent_usd ASC, unit_number ASC LIMIT %s OFFSET %s;"
             params.extend([page_size, (page - 1) * page_size])
             cur.execute(query, tuple(params))
             rows = cur.fetchall()
